@@ -1,11 +1,15 @@
 services:
   hubitat-mcp:
-    # Build from the app/ subdirectory in this repo on the Portainer host.
-    # Alternative: pre-build and push to GHCR, then reference image: ghcr.io/pghart/hubitat-mcp:latest
-    build:
-      context: ./app
-      dockerfile: Dockerfile
-    image: pghart/hubitat-mcp:local
+    # Pull pre-built multi-arch image from GitHub Container Registry.
+    # Image is built and published by .github/workflows/docker-publish.yml
+    # on every push to main and every v* tag.
+    #
+    # To build from source instead (development), comment out the `image:` line
+    # below and uncomment the `build:` block.
+    image: ghcr.io/pghart/hubitat-mcp:latest
+    # build:
+    #   context: ./app
+    #   dockerfile: Dockerfile
     container_name: hubitat-mcp
     restart: unless-stopped
     ports:
