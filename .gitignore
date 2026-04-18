@@ -1,0 +1,21 @@
+# Secrets
+.env
+.env.local
+*.secret
+
+# Python
+*.pyc
+__pycache__/
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Runtime
+logs/
+*.log
+
+# Editor
+.vscode/
+.idea/
+.DS_Store

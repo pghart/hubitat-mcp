@@ -1,0 +1,31 @@
+services:
+  hubitat-mcp:
+    # Build from the app/ subdirectory in this repo on the Portainer host.
+    # Alternative: pre-build and push to GHCR, then reference image: ghcr.io/pghart/hubitat-mcp:latest
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: pghart/hubitat-mcp:local
+    container_name: hubitat-mcp
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      HUBITAT_HUB_IP: "192.168.50.205"
+      HUBITAT_APP_ID: "${HUBITAT_APP_ID}"
+      HUBITAT_ACCESS_TOKEN: "${HUBITAT_ACCESS_TOKEN}"
+      MCP_BEARER_TOKEN: "${MCP_BEARER_TOKEN}"
+      AUDIT_LOG_PATH: "/var/log/hubitat-mcp/audit.log"
+      LOG_LEVEL: "INFO"
+      HTTP_TIMEOUT: "10"
+    volumes:
+      - /opt/docker/stacks/hubitat-mcp/logs:/var/log/hubitat-mcp
+    networks:
+      - hubitat-mcp-net
+    labels:
+      # Matches your existing Dozzle / monitoring conventions
+      com.docker.compose.project: "hubitat-mcp"
+
+networks:
+  hubitat-mcp-net:
+    driver: bridge
