@@ -11,13 +11,13 @@ services:
     ports:
       - "8765:8765"
     environment:
-      HUBITAT_HUB_IP: "192.168.50.205"
-      HUBITAT_APP_ID: "${HUBITAT_APP_ID}"
-      HUBITAT_ACCESS_TOKEN: "${HUBITAT_ACCESS_TOKEN}"
-      MCP_BEARER_TOKEN: "${MCP_BEARER_TOKEN}"
+      HUBITAT_HUB_IP: "${HUBITAT_HUB_IP:?HUBITAT_HUB_IP is required}"
+      HUBITAT_APP_ID: "${HUBITAT_APP_ID:?HUBITAT_APP_ID is required}"
+      HUBITAT_ACCESS_TOKEN: "${HUBITAT_ACCESS_TOKEN:?HUBITAT_ACCESS_TOKEN is required}"
+      MCP_BEARER_TOKEN: "${MCP_BEARER_TOKEN:?MCP_BEARER_TOKEN is required}"
       AUDIT_LOG_PATH: "/var/log/hubitat-mcp/audit.log"
-      LOG_LEVEL: "INFO"
-      HTTP_TIMEOUT: "10"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      HTTP_TIMEOUT: "${HTTP_TIMEOUT:-10}"
     volumes:
       - /opt/docker/stacks/hubitat-mcp/logs:/var/log/hubitat-mcp
     networks:
