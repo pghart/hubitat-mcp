@@ -52,6 +52,185 @@ Write tools (`send_device_command`, `set_mode`, `set_hsm_state`, `set_hub_variab
 
 ### 3. Run the container
 
+#### Option A: Docker Compose (recommended)
+
+The repo ships a `docker-compose.yml` that handles port mapping, the audit log volume mount, healthcheck, and restart policy. For most users this is the easiest path.
+
+```bash
+git clone https://github.com/pghart/hubitat-mcp.git
+cd hubitat-mcp
+
+# Copy the env template and fill it in
+cp .env.example .env
+$EDITOR .env          # or: nano .env, vim .env, open .env
+
+# Generate a bearer token and paste it into .env as MCP_BEARER_TOKEN
+openssl rand -hex 32
+
+# Create the audit log directory (bind-mounted into the container)
+mkdir -p ./logs
+
+# Bring it up
+docker compose up -d
+```
+
+Tail the logs to confirm startup:
+
+```bash
+docker compose logs -f hubitat-mcp
+```
+
+Expected output includes a JSON line like `{"msg":"Starting Hubitat MCP server"...}` followed by the FastMCP banner and `StreamableHTTP session manager started`.
+
+To stop, update, or remove:
+
+```bash
+docker compose down           # stop and remove
+docker compose pull           # pull newer image (if using GHCR image)
+docker compose up -d --build  # rebuild from source and restart
+```
+
+#### Option B: Plain `docker run`
+
+If you don't want Compose, you can run the container directly. You'll need to build the image first (or use the published GHCR image once available).
+
+```bash
+git clone https://github.com/pghart/hubitat-mcp.git
+cd hubitat-mcp/app
+docker build -t hubitat-mcp:local .
+
+mkdir -p ~/hubitat-mcp-logs
+
+docker run -d \
+  --name hubitat-mcp \
+  --restart unless-stopped \
+  -p 8765:8765 \
+  -e HUBITAT_HUB_IP=192.168.1.10 \
+  -e HUBITAT_APP_ID=123 \
+  -e HUBITAT_ACCESS_TOKEN=your-maker-api-token \
+  -e MCP_BEARER_TOKEN="$(openssl rand -hex 32)" \
+  -v ~/hubitat-mcp-logs:/var/log/hubitat-mcp \
+  hubitat-mcp:local
+```
+
+Save your `MCP_BEARER_TOKEN` somewhere — you'll need it to configure AI clients in step 4.
+
+#### Verify it's running
+
+```bash
+curl http://localhost:8765/health
+# {"status":"ok","service":"hubitat-mcp"}
+```
+
+### 4. Connect an AI assistant
+
+**Claude Desktop** — edit `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "hubitat": {
+      "type": "http",
+      "url": "http://your-host:8765/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_BEARER_TOKEN"
+      }
+    }
+  }
+}
+```
+
+**Claude.ai remote connector** — put an HTTPS-terminating reverse proxy in front (Nginx Proxy Manager, Caddy, Traefik), then add a custom connector pointing at `https://your-domain/mcp` with the bearer token in the header.
+
+## Production deployment
+
+### Reverse proxy
+
+MCP's Streamable HTTP transport uses SSE-style long-lived responses. Proxies need:
+
+```nginx
+proxy_buffering off;
+proxy_read_timeout 3600s;
+proxy_send_timeout 3600s;
+```
+
+### Remote access
+
+Two good options depending on your risk tolerance:
+
+**Cloudflare Tunnel + Cloudflare Access** — Expose via tunnel with OAuth/email OTP in front. Adds identity-level gating on top of the bearer token. Test OAuth flow with Claude Desktop first to confirm the AI's connector can complete Access's challenge.
+
+**Tailscale / WireGuard** — Keep the service LAN-only and bring the AI-running device onto your private network instead. Simpler, no public exposure at all.
+
+### Pre-built image
+
+The included GitHub Actions workflow publishes `ghcr.io/pghart/hubitat-mcp:latest` on every push to main and a semver-tagged image on every `v*` tag. Swap the `build:` block in `docker-compose.yml` for `image: ghcr.io/pghart/hubitat-mcp:latest` once the image is published.
+
+## Environment variables
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `HUBITAT_HUB_IP` | yes | — | LAN IP of your Hubitat hub |
+| `HUBITAT_APP_ID` | yes | — | Maker API App ID |
+| `HUBITAT_ACCESS_TOKEN` | yes | — | Maker API access token |
+| `MCP_BEARER_TOKEN` | yes | — | Token clients must send as `Authorization: Bearer ...` |
+| `AUDIT_LOG_PATH` | no | `/var/log/hubitat-mcp/audit.log` | Where to append audit entries for write ops |
+| `LOG_LEVEL` | no | `INFO` | Python logging level |
+| `HTTP_TIMEOUT` | no | `10` | Hubitat HTTP request timeout in seconds |
+
+## Audit logging
+
+Every write operation (`send_device_command`, `set_mode`, `set_hsm_state`, `set_hub_variable`) writes a JSON line to:
+
+- **stdout** — captured by Docker logs, viewable in tools like Dozzle
+- **`AUDIT_LOG_PATH`** — append-only file, persisted across container rebuilds via volume mount
+
+Example:
+
+```json
+{"ts":"2026-04-18T19:30:00Z","action":"device_command","device_id":"42","command":"on","value1":null,"value2":null}
+```
+
+Reads aren't audited — add instrumentation in `hubitat_get()` if you want that.
+
+## Security notes
+
+- The bearer token is the authoritative gate. A reverse proxy in front is defense in depth, not a substitute.
+- Hubitat Maker API access tokens have full control over every device you exposed to the app. Scope the Maker API to only the devices you want the AI to control.
+- HSM arm/disarm and lock/unlock commands work by default. If you want to block them entirely, delete the relevant tools from `server.py` before deploying.
+- Running as non-root (UID 1000) inside the container. If you bind-mount the audit log directory, make sure it's writable by UID 1000 on the host.
+
+## Built with
+
+- [FastMCP](https://github.com/jlowin/fastmcp) — Python MCP framework
+- [httpx](https://www.python-httpx.org/) — async HTTP client
+- The [OpenAPI spec](https://github.com/craigde/hubitat-mcp-server) by @craigde, which was the reference for tool coverage
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
+
+## Not affiliated with Hubitat
+
+Hubitat® and Hubitat Elevation® are trademarks of Hubitat, Inc. This project is an independent community implementation.
+## Quick start (Docker Compose)
+
+### 1. Prerequisites
+
+- A Hubitat Elevation hub on your LAN
+- Docker + Docker Compose on the host that will run this container
+- The host must have LAN access to your Hubitat hub
+
+### 2. Configure Hubitat Maker API
+
+1. Hubitat admin → **Apps** → **Add Built-In App** → **Maker API**
+2. Select the devices to expose
+3. **Allow access via cloud endpoints**: leave **unchecked** (local only)
+4. Under **Allowed IPs / Local LAN Access**, add the IP of your Docker host
+5. Note the **App ID** (number in the generated URLs) and **Access Token**
+
+### 3. Run the container
+
 ```bash
 git clone https://github.com/pghart/hubitat-mcp.git
 cd hubitat-mcp
